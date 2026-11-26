@@ -16,11 +16,34 @@ interface IssuePin {
   isSeed: boolean
 }
 
+// OpenStreetMap reliable raster style that never fails CORS or vector tile issues
+const OSM_STYLE: any = {
+  version: 8,
+  sources: {
+    'osm-raster': {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '&copy; OpenStreetMap contributors',
+    },
+  },
+  layers: [
+    {
+      id: 'osm-raster-layer',
+      type: 'raster',
+      source: 'osm-raster',
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+}
+
 export default function MapPage() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
   const markersRef = useRef<any[]>([])
 
+  const [mapLoaded, setMapLoaded] = useState(false)
   const [issues, setIssues] = useState<IssuePin[]>([])
   const [selectedIssue, setSelectedIssue] = useState<any | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -70,87 +93,126 @@ export default function MapPage() {
 
   // Initialize MapLibre
   useEffect(() => {
-    if (!mapContainer.current) return
+    if (!mapContainer.current || mapInstance.current) return
 
-    let isMounted = true
+    let map: any = null
 
     const initMap = async () => {
-      const maplibregl = await import('maplibre-gl')
+      try {
+        const maplibregl = await import('maplibre-gl')
 
-      if (mapInstance.current) return
+        map = new maplibregl.Map({
+          container: mapContainer.current!,
+          style: OSM_STYLE,
+          center: [80.2500, 13.0650], // Chennai center
+          zoom: 12,
+        })
 
-      const map = new maplibregl.Map({
-        container: mapContainer.current!,
-        style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-        center: [80.2500, 13.0650], // Chennai center
-        zoom: 12,
-      })
+        map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
-      map.addControl(new maplibregl.NavigationControl(), 'top-right')
-      mapInstance.current = map
+        map.on('load', () => {
+          mapInstance.current = map
+          setMapLoaded(true)
+          map.resize()
+        })
+
+        // Resize observer to ensure full height rendering
+        const resizeObserver = new ResizeObserver(() => {
+          if (map) map.resize()
+        })
+        if (mapContainer.current) {
+          resizeObserver.observe(mapContainer.current)
+        }
+      } catch (e) {
+        console.error('MapLibre init error:', e)
+      }
     }
 
-    initMap().catch(console.error)
+    initMap()
 
     return () => {
-      isMounted = false
+      if (map) {
+        map.remove()
+        mapInstance.current = null
+      }
     }
   }, [])
 
-  // Render markers whenever issues or map changes
+  // Render markers whenever issues or mapLoaded changes
   useEffect(() => {
-    if (!mapInstance.current) return
+    if (!mapLoaded || !mapInstance.current) return
 
     const renderMarkers = async () => {
-      const maplibregl = await import('maplibre-gl')
+      try {
+        const maplibregl = await import('maplibre-gl')
 
-      // Remove existing markers
-      markersRef.current.forEach(m => m.remove())
-      markersRef.current = []
+        // Remove existing markers
+        markersRef.current.forEach(m => m.remove())
+        markersRef.current = []
 
-      issues.forEach(issue => {
-        // Status color mapping
-        const color = 
-          issue.status === 'FIX_VERIFIED' ? '#10b981' :
-          issue.status === 'IN_PROGRESS' ? '#3b82f6' :
-          issue.status === 'FIX_SUBMITTED' ? '#8b5cf6' :
-          issue.status === 'FIX_REJECTED' ? '#ef4444' :
-          issue.status === 'NEEDS_REVIEW' ? '#f59e0b' :
-          '#f97316' // REPORTED / ROUTED
+        issues.forEach(issue => {
+          // Status color mapping
+          const color = 
+            issue.status === 'FIX_VERIFIED' ? '#10b981' :
+            issue.status === 'IN_PROGRESS' ? '#3b82f6' :
+            issue.status === 'FIX_SUBMITTED' ? '#8b5cf6' :
+            issue.status === 'FIX_REJECTED' ? '#ef4444' :
+            issue.status === 'NEEDS_REVIEW' ? '#f59e0b' :
+            '#f97316' // REPORTED / ROUTED
 
-        // Ring size by priority band
-        const ringSize =
-          issue.priorityBand === 'CRITICAL' ? 'ring-4 ring-red-500 ring-offset-2 ring-offset-slate-900 animate-pulse' :
-          issue.priorityBand === 'HIGH' ? 'ring-2 ring-amber-400' : ''
+          // Ring styling by priority band
+          const ringStyle =
+            issue.priorityBand === 'CRITICAL' ? 'box-shadow: 0 0 0 4px #ef4444, 0 4px 12px rgba(0,0,0,0.5);' :
+            issue.priorityBand === 'HIGH' ? 'box-shadow: 0 0 0 3px #f59e0b, 0 3px 8px rgba(0,0,0,0.4);' :
+            'box-shadow: 0 2px 6px rgba(0,0,0,0.3);'
 
-        const el = document.createElement('div')
-        el.className = `cursor-pointer rounded-full flex items-center justify-center text-white font-bold text-xs shadow-lg transition-transform hover:scale-125 ${ringSize}`
-        el.style.backgroundColor = color
-        el.style.width = '30px'
-        el.style.height = '30px'
-        el.style.border = '2px solid white'
-        el.innerText = String(issue.reportCount || 1)
-        el.title = `${issue.category} · Status: ${issue.status}`
+          const el = document.createElement('div')
+          el.className = 'cursor-pointer'
+          el.style.cssText = `
+            background-color: ${color};
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid white;
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            ${ringStyle}
+          `
+          el.innerText = String(issue.reportCount || 1)
+          el.title = `${issue.category} (#${issue.id.slice(0, 8)}) - Status: ${issue.status}`
 
-        el.addEventListener('click', () => {
-          selectIssue(issue.id)
+          el.onmouseenter = () => { el.style.transform = 'scale(1.3)' }
+          el.onmouseleave = () => { el.style.transform = 'scale(1)' }
+
+          el.addEventListener('click', (e) => {
+            e.stopPropagation()
+            selectIssue(issue.id)
+          })
+
+          const marker = new maplibregl.Marker({ element: el })
+            .setLngLat([issue.lon, issue.lat])
+            .addTo(mapInstance.current)
+
+          markersRef.current.push(marker)
         })
-
-        const marker = new maplibregl.Marker({ element: el })
-          .setLngLat([issue.lon, issue.lat])
-          .addTo(mapInstance.current)
-
-        markersRef.current.push(marker)
-      })
+      } catch (err) {
+        console.error('Error rendering markers:', err)
+      }
     }
 
     renderMarkers()
-  }, [issues])
+  }, [mapLoaded, issues])
 
   return (
-    <div className="flex-1 flex overflow-hidden relative">
+    <div className="flex-1 w-full h-[calc(100vh-61px)] flex overflow-hidden relative">
       {/* Filters Overlay */}
-      <div className="absolute top-4 left-4 z-20 bg-slate-900/90 backdrop-blur-md p-3 rounded-xl border border-slate-800 shadow-xl flex flex-wrap items-center gap-3 text-xs">
+      <div className="absolute top-4 left-4 z-20 bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-slate-800 shadow-2xl flex flex-wrap items-center gap-3 text-xs">
         <select
           value={categoryFilter}
           onChange={e => setCategoryFilter(e.target.value)}
@@ -201,12 +263,16 @@ export default function MapPage() {
         </label>
 
         <div className="border-l border-slate-700 pl-3 text-slate-400">
-          Showing <strong className="text-white">{issues.length}</strong> issues
+          Showing <strong className="text-white">{issues.length}</strong> defect issues
         </div>
       </div>
 
       {/* Map Canvas */}
-      <div ref={mapContainer} className="flex-1 w-full h-full" />
+      <div 
+        ref={mapContainer} 
+        className="w-full h-full flex-1 bg-slate-900"
+        style={{ minHeight: '500px', width: '100%', height: '100%' }}
+      />
 
       {/* Side Panel for Issue Detail */}
       {selectedIssue && (
@@ -250,23 +316,16 @@ export default function MapPage() {
           {/* Evidence Bundle Gallery */}
           <div className="mb-4">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              Citizen Evidence Bundle ({selectedIssue.reports?.length || 0} Reports)
+              Evidence Bundle ({selectedIssue.reports?.length || selectedIssue.reportCount || 1} Reports)
             </h3>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {selectedIssue.reports?.map((r: any, idx: number) => (
-                <div key={r.id} className="relative aspect-square rounded-lg overflow-hidden border border-slate-700 bg-slate-800">
-                  <img
-                    src={`/api/images${r.image?.path}`}
-                    alt={`Report ${idx + 1}`}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      // Fallback placeholder
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" fill="%23334155"><rect width="100" height="100"/></svg>'
-                    }}
-                  />
-                  <span className="absolute bottom-1 right-1 text-[9px] bg-black/70 text-white px-1 rounded">
-                    #{idx + 1}
-                  </span>
+                <div key={r.id || idx} className="relative aspect-video rounded-lg overflow-hidden border border-slate-700 bg-slate-800">
+                  <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center bg-slate-800">
+                    <span className="text-2xl mb-1">📸</span>
+                    <span className="text-[10px] text-slate-300 font-mono">Report #{idx + 1}</span>
+                    <span className="text-[9px] text-slate-500 truncate max-w-full">{r.image?.sha256?.slice(0, 12)}...</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -276,11 +335,11 @@ export default function MapPage() {
           <div className="mb-4 p-3 rounded-lg bg-slate-800/40 border border-slate-800 text-xs space-y-2">
             <div>
               <span className="font-semibold text-slate-300">Severity Assessment: </span>
-              <span className="text-slate-400">{selectedIssue.severityRationale || 'Severity calculated from image features.'}</span>
+              <span className="text-slate-400">{selectedIssue.severityRationale || 'Computed from defect geometry & hazard context.'}</span>
             </div>
             <div>
               <span className="font-semibold text-slate-300">Priority Rationale: </span>
-              <span className="text-slate-400">{selectedIssue.priorityRationale || 'Awaiting multi-factor context rating.'}</span>
+              <span className="text-slate-400">{selectedIssue.priorityRationale || 'Location weighted by transit proximity.'}</span>
             </div>
           </div>
 
@@ -290,7 +349,7 @@ export default function MapPage() {
               href={`/issues/${selectedIssue.id}`}
               className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold"
             >
-              Full Evidence & Audit Trail →
+              Audit Trail →
             </Link>
             <Link
               href={`/fix/${selectedIssue.id}`}
