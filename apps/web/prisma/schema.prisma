@@ -1,0 +1,186 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [pgvector(map: "vector", schema: "extensions")]
+}
+
+enum Role {
+  user
+  authority
+}
+
+enum IssueStatus {
+  REPORTED
+  ROUTED
+  ACKNOWLEDGED
+  IN_PROGRESS
+  FIX_SUBMITTED
+  FIX_VERIFIED
+  FIX_REJECTED
+  NEEDS_REVIEW
+  RECURRED
+}
+
+enum IssueCategory {
+  pothole
+  drainage
+  garbage
+}
+
+enum PriorityBand {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ImageKind {
+  report
+  fix
+}
+
+enum FixDecision {
+  APPROVED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+model User {
+  id        String   @id @default(cuid())
+  role      Role
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  reports Report[]
+
+  @@map("users")
+}
+
+model Issue {
+  id               String       @id @default(cuid())
+  category         IssueCategory
+  lat              Float
+  lon              Float
+  status           IssueStatus  @default(REPORTED)
+  flags            String[]     @default([])
+  severity         Int?         @db.SmallInt
+  severityRationale String?     @map("severity_rationale")
+  priorityScore    Int?         @map("priority_score")
+  priorityBand     PriorityBand? @map("priority_band")
+  priorityRationale String?     @map("priority_rationale")
+  reportCount      Int          @default(1) @map("report_count")
+  slaDueAt         DateTime?    @map("sla_due_at")
+  routedAuthorities Json?       @map("routed_authorities")
+  isSeed           Boolean      @default(false) @map("is_seed")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  reports      Report[]
+  fixAttempts  FixAttempt[]
+  events       Event[]
+
+  @@map("issues")
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  issueId        String   @map("issue_id")
+  userId         String   @map("user_id")
+  imageId        String   @map("image_id")
+  lat            Float
+  lon            Float
+  capturedAt     DateTime? @map("captured_at")
+  classification Json?
+  humanOverride  Boolean  @default(false) @map("human_override")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  issue Issue  @relation(fields: [issueId], references: [id])
+  user  User   @relation(fields: [userId], references: [id])
+  image Image  @relation(fields: [imageId], references: [id])
+
+  @@map("reports")
+}
+
+model Image {
+  id        String                 @id @default(cuid())
+  kind      ImageKind
+  path      String
+  sha256    String
+  exif      Json?
+  embedding Unsupported("vector(512)")?
+
+  reports   Report[]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("images")
+}
+
+model AiRun {
+  id          String   @id @default(cuid())
+  task        String
+  model       String
+  promptHash  String   @map("prompt_hash")
+  inputHashes String[] @map("input_hashes")
+  rawOutput   String   @map("raw_output")
+  parsed      Json?
+  latencyMs   Int      @map("latency_ms")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("ai_runs")
+}
+
+model FixAttempt {
+  id          String      @id @default(cuid())
+  issueId     String      @map("issue_id")
+  imageIds    String[]    @map("image_ids")
+  pairOutputs Json?       @map("pair_outputs")
+  fixScore    Float?      @map("fix_score")
+  decision    FixDecision?
+  thresholds  Json?
+  receipt     Json?
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  issue Issue @relation(fields: [issueId], references: [id])
+
+  @@map("fix_attempts")
+}
+
+model Event {
+  id        String   @id @default(cuid())
+  issueId   String   @map("issue_id")
+  type      String
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  issue Issue @relation(fields: [issueId], references: [id])
+
+  @@map("events")
+}
+
+model Authority {
+  id         String  @id @default(cuid())
+  name       String
+  department String
+  zone       String?
+  handles    Json?
+  verified   Boolean @default(false)
+
+  @@map("authorities")
+}
+
+model MetricsRun {
+  id        String   @id @default(cuid())
+  name      String
+  dataset   String?
+  n         Int?
+  results   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("metrics_runs")
+}

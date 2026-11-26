@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # Supabase local dev (PostgreSQL + pgvector)
+  db:
+    image: supabase/postgres:15.6.1.143
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fixproof
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # AI Service
+  ai:
+    build: ./services/ai
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-qwen/qwen2.5-vl-72b-instruct}
+      - EMBED_MODEL=${EMBED_MODEL:-openai/text-embedding-3-small}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./services/ai:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  pgdata:

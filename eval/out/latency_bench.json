@@ -1,0 +1,15 @@
+{
+  "n_runs": 30,
+  "upload_to_issue": {
+    "p50_seconds": 2.8,
+    "p95_seconds": 7.4,
+    "target_seconds": 20.0,
+    "sla_met": true
+  },
+  "fix_to_decision": {
+    "p50_seconds": 6.1,
+    "p95_seconds": 14.3,
+    "target_seconds": 60.0,
+    "sla_met": true
+  }
+}

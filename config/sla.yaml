@@ -1,0 +1,12 @@
+# SLA hours by category (placeholder — verify against Chennai corporation citizen charter)
+pothole:
+  sla_hours: 72
+  escalation_multiplier: 1.5
+
+drainage:
+  sla_hours: 48
+  escalation_multiplier: 1.5
+
+garbage:
+  sla_hours: 24
+  escalation_multiplier: 1.5

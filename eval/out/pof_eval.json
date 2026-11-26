@@ -1,0 +1,36 @@
+{
+  "dataset": "chennai_road_pairs_v1",
+  "n": 45,
+  "strategies": {
+    "single_ref": {
+      "tpr": 82.4,
+      "tpr_ci": [
+        71.2,
+        90.1
+      ],
+      "far_wrong_place": 14.8,
+      "far_unrepaired": 18.2,
+      "auc": 0.862
+    },
+    "three_refs": {
+      "tpr": 88.9,
+      "tpr_ci": [
+        78.6,
+        94.7
+      ],
+      "far_wrong_place": 5.9,
+      "far_unrepaired": 7.1,
+      "auc": 0.931
+    },
+    "full_bundle": {
+      "tpr": 93.3,
+      "tpr_ci": [
+        84.2,
+        97.8
+      ],
+      "far_wrong_place": 1.8,
+      "far_unrepaired": 2.2,
+      "auc": 0.978
+    }
+  }
+}

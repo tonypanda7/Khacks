@@ -1,0 +1,42 @@
+[
+  {
+    "id": "gcc",
+    "name": "Greater Chennai Corporation",
+    "department": "Roads & Infrastructure",
+    "zone": "all",
+    "handles": ["pothole", "garbage"],
+    "verified": false
+  },
+  {
+    "id": "gcc_swd",
+    "name": "Greater Chennai Corporation - Storm Water Drains",
+    "department": "Storm Water Drain Department",
+    "zone": "all",
+    "handles": ["drainage"],
+    "verified": false
+  },
+  {
+    "id": "cmwssb",
+    "name": "Chennai Metro Water Supply & Sewerage Board",
+    "department": "Sewerage Maintenance",
+    "zone": "all",
+    "handles": ["drainage"],
+    "verified": false
+  },
+  {
+    "id": "tnhw",
+    "name": "Tamil Nadu Highways Department",
+    "department": "State Highways Maintenance",
+    "zone": "all",
+    "handles": ["pothole"],
+    "verified": false
+  },
+  {
+    "id": "gcc_shm",
+    "name": "Greater Chennai Corporation - Solid Waste Management",
+    "department": "Solid Waste Management",
+    "zone": "all",
+    "handles": ["garbage"],
+    "verified": false
+  }
+]
