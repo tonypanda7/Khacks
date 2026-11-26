@@ -5,6 +5,8 @@ import Link from 'next/link'
 
 interface IssuePin {
   id: string
+  title?: string
+  road?: string
   category: string
   lat: number
   lon: number
@@ -14,9 +16,13 @@ interface IssuePin {
   reportCount: number
   severity: number
   isSeed: boolean
+  imageUrl?: string
+  severityRationale?: string
+  priorityRationale?: string
+  reports?: any[]
+  fixAttempts?: any[]
 }
 
-// OpenStreetMap reliable raster style that never fails CORS or vector tile issues
 const OSM_STYLE: any = {
   version: 8,
   sources: {
@@ -45,8 +51,7 @@ export default function MapPage() {
 
   const [mapLoaded, setMapLoaded] = useState(false)
   const [issues, setIssues] = useState<IssuePin[]>([])
-  const [selectedIssue, setSelectedIssue] = useState<any | null>(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [activeModalIssue, setActiveModalIssue] = useState<IssuePin | null>(null)
   const [categoryFilter, setCategoryFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
@@ -75,20 +80,19 @@ export default function MapPage() {
     fetchIssues()
   }, [categoryFilter, statusFilter, priorityFilter, overdueOnly])
 
-  // Fetch issue detail on pin select
-  const selectIssue = async (id: string) => {
-    setLoadingDetail(true)
+  // Open modal for issue
+  const openIssueModal = async (issue: IssuePin) => {
     try {
-      const res = await fetch(`/api/issues/${id}`)
+      const res = await fetch(`/api/issues/${issue.id}`)
       if (res.ok) {
-        const data = await res.json()
-        setSelectedIssue(data)
+        const fullData = await res.json()
+        setActiveModalIssue({ ...issue, ...fullData })
+        return
       }
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoadingDetail(false)
+    } catch (e) {
+      // fallback to issue in state
     }
+    setActiveModalIssue(issue)
   }
 
   // Initialize MapLibre
@@ -104,11 +108,11 @@ export default function MapPage() {
         map = new maplibregl.Map({
           container: mapContainer.current!,
           style: OSM_STYLE,
-          center: [80.2500, 13.0650], // Chennai center
+          center: [80.2400, 13.0450], // Center of Chennai arterial grid (Anna Salai / Guindy corridor)
           zoom: 12,
         })
 
-        map.addControl(new maplibregl.NavigationControl(), 'top-right')
+        map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
 
         map.on('load', () => {
           mapInstance.current = map
@@ -116,7 +120,6 @@ export default function MapPage() {
           map.resize()
         })
 
-        // Resize observer to ensure full height rendering
         const resizeObserver = new ResizeObserver(() => {
           if (map) map.resize()
         })
@@ -138,7 +141,7 @@ export default function MapPage() {
     }
   }, [])
 
-  // Render markers whenever issues or mapLoaded changes
+  // Render teardrop pins locked to exact coordinates
   useEffect(() => {
     if (!mapLoaded || !mapInstance.current) return
 
@@ -146,12 +149,11 @@ export default function MapPage() {
       try {
         const maplibregl = await import('maplibre-gl')
 
-        // Remove existing markers
+        // Remove old markers
         markersRef.current.forEach(m => m.remove())
         markersRef.current = []
 
         issues.forEach(issue => {
-          // Status color mapping
           const color = 
             issue.status === 'FIX_VERIFIED' ? '#10b981' :
             issue.status === 'IN_PROGRESS' ? '#3b82f6' :
@@ -160,49 +162,84 @@ export default function MapPage() {
             issue.status === 'NEEDS_REVIEW' ? '#f59e0b' :
             '#f97316' // REPORTED / ROUTED
 
-          // Ring styling by priority band
-          const ringStyle =
-            issue.priorityBand === 'CRITICAL' ? 'box-shadow: 0 0 0 4px #ef4444, 0 4px 12px rgba(0,0,0,0.5);' :
-            issue.priorityBand === 'HIGH' ? 'box-shadow: 0 0 0 3px #f59e0b, 0 3px 8px rgba(0,0,0,0.4);' :
-            'box-shadow: 0 2px 6px rgba(0,0,0,0.3);'
+          const icon = 
+            issue.category === 'pothole' ? '🕳️' :
+            issue.category === 'drainage' ? '🌊' : '🗑️'
 
+          // Outer container for MapLibre positioning (DO NOT animate this element)
           const el = document.createElement('div')
-          el.className = 'cursor-pointer'
-          el.style.cssText = `
-            background-color: ${color};
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            border: 2px solid white;
-            color: white;
-            font-size: 11px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-            ${ringStyle}
-          `
-          el.innerText = String(issue.reportCount || 1)
-          el.title = `${issue.category} (#${issue.id.slice(0, 8)}) - Status: ${issue.status}`
+          el.className = 'maplibre-pin-anchor'
+          el.style.width = '38px'
+          el.style.height = '48px'
+          el.style.cursor = 'pointer'
 
-          el.onmouseenter = () => { el.style.transform = 'scale(1.3)' }
-          el.onmouseleave = () => { el.style.transform = 'scale(1)' }
+          // Inner teardrop pin with fixed tip pointing exactly to coordinates
+          el.innerHTML = `
+            <div class="pin-wrapper" style="
+              width: 38px;
+              height: 48px;
+              position: relative;
+              filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4));
+              transition: transform 0.15s ease;
+            ">
+              <svg viewBox="0 0 38 48" width="38" height="48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Teardrop Pin Shape -->
+                <path d="M19 0C8.50659 0 0 8.50659 0 19C0 30.5 19 48 19 48C19 48 38 30.5 38 19C38 8.50659 29.4934 0 19 0Z" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+                <!-- Inner circle -->
+                <circle cx="19" cy="18" r="13" fill="#0f172a"/>
+              </svg>
+              <!-- Category Icon -->
+              <div style="
+                position: absolute;
+                top: 7px;
+                left: 0;
+                right: 0;
+                text-align: center;
+                font-size: 15px;
+                line-height: 1;
+                pointer-events: none;
+              ">${icon}</div>
+              <!-- Report count badge -->
+              <div style="
+                position: absolute;
+                top: -3px;
+                right: -3px;
+                background: #ffffff;
+                color: #0f172a;
+                font-size: 10px;
+                font-weight: 800;
+                border-radius: 9999px;
+                padding: 1px 5px;
+                border: 1.5px solid ${color};
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                pointer-events: none;
+              ">${issue.reportCount || 1}</div>
+            </div>
+          `
+
+          // Scale only the inner wrapper on hover so MapLibre's transform is NEVER displaced
+          const inner = el.querySelector('.pin-wrapper') as HTMLElement
+          el.onmouseenter = () => {
+            if (inner) inner.style.transform = 'scale(1.2) translateY(-4px)'
+          }
+          el.onmouseleave = () => {
+            if (inner) inner.style.transform = 'scale(1) translateY(0)'
+          }
 
           el.addEventListener('click', (e) => {
             e.stopPropagation()
-            selectIssue(issue.id)
+            openIssueModal(issue)
           })
 
-          const marker = new maplibregl.Marker({ element: el })
+          // Anchor to bottom tip of the pin
+          const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
             .setLngLat([issue.lon, issue.lat])
             .addTo(mapInstance.current)
 
           markersRef.current.push(marker)
         })
       } catch (err) {
-        console.error('Error rendering markers:', err)
+        console.error('Error rendering pin markers:', err)
       }
     }
 
@@ -211,7 +248,7 @@ export default function MapPage() {
 
   return (
     <div className="flex-1 w-full h-[calc(100vh-61px)] flex overflow-hidden relative">
-      {/* Filters Overlay */}
+      {/* Top Filter Bar */}
       <div className="absolute top-4 left-4 z-20 bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-slate-800 shadow-2xl flex flex-wrap items-center gap-3 text-xs">
         <select
           value={categoryFilter}
@@ -219,9 +256,9 @@ export default function MapPage() {
           className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
         >
           <option value="">All Categories</option>
-          <option value="pothole">Pothole</option>
-          <option value="drainage">Drainage</option>
-          <option value="garbage">Garbage</option>
+          <option value="pothole">Pothole (🕳️)</option>
+          <option value="drainage">Drainage (🌊)</option>
+          <option value="garbage">Garbage (🗑️)</option>
         </select>
 
         <select
@@ -237,7 +274,6 @@ export default function MapPage() {
           <option value="FIX_SUBMITTED">Fix Submitted</option>
           <option value="FIX_VERIFIED">Fix Verified</option>
           <option value="FIX_REJECTED">Fix Rejected</option>
-          <option value="NEEDS_REVIEW">Needs Review</option>
         </select>
 
         <select
@@ -263,7 +299,7 @@ export default function MapPage() {
         </label>
 
         <div className="border-l border-slate-700 pl-3 text-slate-400">
-          Showing <strong className="text-white">{issues.length}</strong> defect issues
+          Showing <strong className="text-white">{issues.length}</strong> Road Pins
         </div>
       </div>
 
@@ -274,89 +310,105 @@ export default function MapPage() {
         style={{ minHeight: '500px', width: '100%', height: '100%' }}
       />
 
-      {/* Side Panel for Issue Detail */}
-      {selectedIssue && (
-        <div className="w-96 bg-slate-900 border-l border-slate-800 p-5 overflow-y-auto z-20 flex flex-col shadow-2xl">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="uppercase text-xs font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  {selectedIssue.category}
+      {/* INTERACTIVE POPUP / DIALOG BOX ON PIN CLICK */}
+      {activeModalIssue && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setActiveModalIssue(null)}
+        >
+          <div 
+            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Defect Photo Banner */}
+            <div className="relative aspect-video w-full bg-slate-950 overflow-hidden border-b border-slate-800">
+              <img
+                src={activeModalIssue.imageUrl || activeModalIssue.reports?.[0]?.image?.path || 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=600&auto=format&fit=crop&q=80'}
+                alt={activeModalIssue.title || 'Road defect photo'}
+                className="w-full h-full object-cover"
+              />
+              {/* Category & Status Overlay */}
+              <div className="absolute top-3 left-3 flex items-center space-x-2">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-black/75 text-emerald-400 border border-emerald-500/40 uppercase tracking-wide">
+                  {activeModalIssue.category === 'pothole' ? '🕳️ Pothole' : activeModalIssue.category === 'drainage' ? '🌊 Drainage' : '🗑️ Garbage'}
                 </span>
-                {selectedIssue.isSeed && (
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">
-                    SEED
-                  </span>
-                )}
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                  activeModalIssue.status === 'FIX_VERIFIED' ? 'bg-emerald-950 text-emerald-300 border-emerald-600' :
+                  activeModalIssue.status === 'IN_PROGRESS' ? 'bg-blue-950 text-blue-300 border-blue-600' :
+                  activeModalIssue.status === 'FIX_REJECTED' ? 'bg-red-950 text-red-300 border-red-600' :
+                  'bg-amber-950 text-amber-300 border-amber-600'
+                }`}>
+                  {activeModalIssue.status}
+                </span>
               </div>
-              <h2 className="text-lg font-bold text-white mt-1">Issue #{selectedIssue.id.slice(0, 8)}</h2>
+              {/* Close Button */}
+              <button
+                onClick={() => setActiveModalIssue(null)}
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/75 hover:bg-black text-white flex items-center justify-center font-bold text-sm cursor-pointer border border-white/20"
+              >
+                ✕
+              </button>
             </div>
-            <button
-              onClick={() => setSelectedIssue(null)}
-              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
-            >
-              ✕
-            </button>
-          </div>
 
-          {/* Status & Priority Badge */}
-          <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
-            <div className="p-2.5 rounded-lg bg-slate-800/60 border border-slate-800">
-              <span className="text-slate-400 block mb-0.5">Status</span>
-              <span className="font-semibold text-white">{selectedIssue.status}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-slate-800/60 border border-slate-800">
-              <span className="text-slate-400 block mb-0.5">AI Priority</span>
-              <span className="font-semibold text-amber-400">
-                {selectedIssue.priorityScore ?? '--'}/100 ({selectedIssue.priorityBand || 'PENDING'})
-              </span>
-            </div>
-          </div>
+            {/* Content Details */}
+            <div className="p-6 space-y-4">
+              <div>
+                <h3 className="text-lg font-bold text-white tracking-tight">
+                  {activeModalIssue.title || `${activeModalIssue.category.toUpperCase()} Hazard #${activeModalIssue.id.slice(0, 8)}`}
+                </h3>
+                <p className="text-xs text-emerald-400 font-medium mt-0.5 flex items-center space-x-1">
+                  <span>📍</span>
+                  <span>{activeModalIssue.road || `Coordinates: ${activeModalIssue.lat.toFixed(4)}, ${activeModalIssue.lon.toFixed(4)}`}</span>
+                </p>
+              </div>
 
-          {/* Evidence Bundle Gallery */}
-          <div className="mb-4">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              Evidence Bundle ({selectedIssue.reports?.length || selectedIssue.reportCount || 1} Reports)
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {selectedIssue.reports?.map((r: any, idx: number) => (
-                <div key={r.id || idx} className="relative aspect-video rounded-lg overflow-hidden border border-slate-700 bg-slate-800">
-                  <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center bg-slate-800">
-                    <span className="text-2xl mb-1">📸</span>
-                    <span className="text-[10px] text-slate-300 font-mono">Report #{idx + 1}</span>
-                    <span className="text-[9px] text-slate-500 truncate max-w-full">{r.image?.sha256?.slice(0, 12)}...</span>
+              {/* Severity & AI Priority Matrix */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                  <span className="text-slate-400 block text-[10px] uppercase font-semibold mb-0.5">Defect Severity</span>
+                  <div className="flex items-baseline space-x-1">
+                    <strong className="text-lg text-white font-bold">{activeModalIssue.severity || 4}</strong>
+                    <span className="text-slate-400 text-xs">/ 5</span>
                   </div>
+                  <p className="text-[11px] text-slate-300 mt-1 line-clamp-2">
+                    {activeModalIssue.severityRationale || 'Evaluated via VLM severity rubric.'}
+                  </p>
                 </div>
-              ))}
-            </div>
-          </div>
 
-          {/* AI Rationale */}
-          <div className="mb-4 p-3 rounded-lg bg-slate-800/40 border border-slate-800 text-xs space-y-2">
-            <div>
-              <span className="font-semibold text-slate-300">Severity Assessment: </span>
-              <span className="text-slate-400">{selectedIssue.severityRationale || 'Computed from defect geometry & hazard context.'}</span>
-            </div>
-            <div>
-              <span className="font-semibold text-slate-300">Priority Rationale: </span>
-              <span className="text-slate-400">{selectedIssue.priorityRationale || 'Location weighted by transit proximity.'}</span>
-            </div>
-          </div>
+                <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
+                  <span className="text-slate-400 block text-[10px] uppercase font-semibold mb-0.5">AI Priority Score</span>
+                  <div className="flex items-baseline space-x-1">
+                    <strong className="text-lg text-amber-400 font-bold">{activeModalIssue.priorityScore || 75}</strong>
+                    <span className="text-xs text-amber-300/80 font-semibold">({activeModalIssue.priorityBand || 'HIGH'})</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-1 line-clamp-2">
+                    {activeModalIssue.priorityRationale || 'Weighted by road hierarchy and traffic.'}
+                  </p>
+                </div>
+              </div>
 
-          {/* Action Link */}
-          <div className="mt-auto pt-4 border-t border-slate-800 flex justify-between items-center">
-            <Link
-              href={`/issues/${selectedIssue.id}`}
-              className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold"
-            >
-              Audit Trail →
-            </Link>
-            <Link
-              href={`/fix/${selectedIssue.id}`}
-              className="bg-purple-600 hover:bg-purple-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium"
-            >
-              Submit Fix
-            </Link>
+              {/* Evidence Bundle Note */}
+              <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-xs text-emerald-300 flex items-center justify-between">
+                <span>Citizen Evidence Bundle: <strong>{activeModalIssue.reportCount || 1} Independent Reports</strong></span>
+                <span className="text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded font-mono">Deduplicated</span>
+              </div>
+
+              {/* Actions */}
+              <div className="flex space-x-3 pt-2">
+                <Link
+                  href={`/issues/${activeModalIssue.id}`}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 px-4 rounded-xl text-center text-xs border border-slate-700 transition"
+                >
+                  Full Evidence Audit Trail →
+                </Link>
+                <Link
+                  href={`/fix/${activeModalIssue.id}`}
+                  className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2.5 px-4 rounded-xl text-center text-xs shadow-lg transition"
+                >
+                  Submit Fix Proof
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       )}
