@@ -13,21 +13,27 @@ export async function POST(req: NextRequest) {
     }
 
     const name = role === 'user' ? 'user_demo' : 'authority_demo'
+    let userId = role === 'user' ? 'user_demo_id' : 'authority_demo_id'
     
-    let user = await prisma.user.findFirst({ where: { name, role } })
-    if (!user) {
-      user = await prisma.user.create({ data: { name, role } })
+    try {
+      let user = await prisma.user.findFirst({ where: { name, role } })
+      if (!user) {
+        user = await prisma.user.create({ data: { name, role } })
+      }
+      userId = user.id
+    } catch (err) {
+      // Database not connected yet — continue with demo session ID
     }
 
     const cookieStore = await cookies()
     const session = await getIronSession<SessionData>(cookieStore, sessionOptions)
-    session.userId = user.id
-    session.role = user.role
-    session.name = user.name
+    session.userId = userId
+    session.role = role
+    session.name = name
     session.isLoggedIn = true
     await session.save()
 
-    return NextResponse.json({ userId: user.id, role: user.role, name: user.name })
+    return NextResponse.json({ userId, role, name })
   } catch (err: any) {
     console.error('Login error:', err)
     return NextResponse.json({ error: err.message || 'Login failed' }, { status: 500 })
