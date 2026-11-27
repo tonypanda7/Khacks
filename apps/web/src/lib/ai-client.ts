@@ -130,9 +130,41 @@ Return JSON matching this exact structure:
     }
 
     if (endpoint === '/same-defect') {
+      if (isFormData) {
+        try {
+          const fileNew = data.get('image_new') as File | Blob
+          const fileRef = data.get('image_ref') as File | Blob
+          const category = (data.get('category') as string) || 'pothole'
+
+          if (fileNew && fileRef) {
+            const b64New = Buffer.from(await fileNew.arrayBuffer()).toString('base64')
+            const b64Ref = Buffer.from(await fileRef.arrayBuffer()).toString('base64')
+
+            const prompt = `Compare Image 1 (a newly reported road issue) and Image 2 (an existing reference issue nearby for category "${category}").
+Determine if these two images depict the EXACT SAME physical defect (e.g. identical crater/debris from a different angle or lighting), or if they are TWO DIFFERENT defects that happen to be near each other.
+Return JSON:
+{
+  "same_defect_prob": 0.0 to 1.0,
+  "rationale": "Clear explanation of whether the defect shape, asphalt texture, depth, and surrounding environment match."
+}`
+
+            const parsed = await callDirectDeepInfraVision(prompt, [b64New, b64Ref])
+            if (typeof parsed.same_defect_prob === 'number') {
+              return {
+                same_defect_prob: parsed.same_defect_prob,
+                rationale: parsed.rationale || 'Vision AI evaluated duplicate probability.'
+              }
+            }
+          }
+        } catch (err: any) {
+          console.warn('Direct duplicate vision check error:', err.message)
+        }
+      }
+
+      // Default safe probability: 0.65 (triggers confirmation prompt rather than auto-merging)
       return {
-        same_defect_prob: 0.82,
-        rationale: 'Geographical proximity and matching defect visual cues suggest identical road hazard.'
+        same_defect_prob: 0.65,
+        rationale: 'Defects are in close geographical proximity; user confirmation requested.'
       }
     }
 

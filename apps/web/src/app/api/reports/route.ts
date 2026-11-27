@@ -75,6 +75,18 @@ export async function POST(req: NextRequest) {
       // Offline fallback
     }
 
+    // Direct Supabase insert over HTTPS
+    try {
+      await supabaseAdmin.from('images').upsert({
+        id: imageId,
+        kind: 'report',
+        path: imagePath,
+        sha256: hash,
+        exif: exif?.raw || {},
+        created_at: new Date().toISOString(),
+      })
+    } catch {}
+
     // Check AI service
     const aiStatus = await checkAIService()
     
@@ -135,18 +147,29 @@ export async function POST(req: NextRequest) {
             const bestCandidate = nearbyCandidates[0]
             const refImage = bestCandidate.reports?.[0]?.image
             if (refImage) {
-              const fullRefPath = getImagePath(refImage.path)
-              if (fs.existsSync(fullRefPath)) {
-                const refBuffer = fs.readFileSync(fullRefPath)
+              let refBuffer: Buffer | null = null
+              if (refImage.path.startsWith('http://') || refImage.path.startsWith('https://')) {
+                try {
+                  const r = await fetch(refImage.path)
+                  if (r.ok) refBuffer = Buffer.from(await r.arrayBuffer())
+                } catch {}
+              } else {
+                const fullRefPath = getImagePath(refImage.path)
+                if (fs.existsSync(fullRefPath)) {
+                  refBuffer = fs.readFileSync(fullRefPath)
+                }
+              }
+
+              if (refBuffer) {
                 const sameDefectForm = new FormData()
-                sameDefectForm.append('image_new', new Blob([buffer], { type: 'image/jpeg' }), 'new.jpg')
-                sameDefectForm.append('image_ref', new Blob([refBuffer], { type: 'image/jpeg' }), 'ref.jpg')
+                sameDefectForm.append('image_new', new Blob([new Uint8Array(buffer)], { type: 'image/jpeg' }), 'new.jpg')
+                sameDefectForm.append('image_ref', new Blob([new Uint8Array(refBuffer)], { type: 'image/jpeg' }), 'ref.jpg')
                 sameDefectForm.append('category', classification.category)
 
                 const result = await callAI('/same-defect', sameDefectForm)
                 
-                const attachMin = thresholds.dedup?.attach_min || 0.8
-                const askMin = thresholds.dedup?.ask_min || 0.5
+                const attachMin = thresholds.dedup?.attach_min || 0.85
+                const askMin = thresholds.dedup?.ask_min || 0.45
 
                 if (result.same_defect_prob >= attachMin) {
                   matchedIssueId = bestCandidate.id
@@ -248,27 +271,6 @@ export async function POST(req: NextRequest) {
       // Database offline — persist via store.ts
     }
 
-    // Also sync to Supabase over HTTPS port 443
-    try {
-      await supabaseAdmin.from('issues').upsert({
-        id: issueId,
-        category,
-        lat: lat!,
-        lon: lon!,
-        status: initialStatus,
-        severity,
-        severity_rationale: severityRationale,
-        priority_score: 70,
-        priority_band: 'HIGH',
-        priority_rationale: 'Intake evaluated by Vision AI',
-        report_count: 1,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-    } catch {
-      // Supabase REST error
-    }
-
     // Create report record
     let reportId = 'rep-' + Date.now()
     try {
@@ -289,6 +291,40 @@ export async function POST(req: NextRequest) {
       // DB offline
     }
 
+    // Also sync issue and report to Supabase over HTTPS port 443
+    try {
+      await supabaseAdmin.from('issues').upsert({
+        id: issueId,
+        category,
+        lat: lat!,
+        lon: lon!,
+        status: initialStatus,
+        severity,
+        severity_rationale: severityRationale,
+        priority_score: 70,
+        priority_band: 'HIGH',
+        priority_rationale: 'Intake evaluated by Vision AI',
+        report_count: matchedIssueId ? 2 : 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+
+      await supabaseAdmin.from('reports').upsert({
+        id: reportId,
+        issue_id: issueId,
+        user_id: session.userId || 'user_demo_id',
+        image_id: imageId,
+        lat: lat!,
+        lon: lon!,
+        captured_at: capturedAt.toISOString(),
+        classification: classification,
+        human_override: false,
+        created_at: new Date().toISOString(),
+      })
+    } catch (supaErr) {
+      console.warn('Supabase HTTPS sync warning:', supaErr)
+    }
+
     // Always persist to local store for instant availability on /map and /issues/[id]
     const locationName = (lat! > 13.10) ? 'North Chennai / R.K. Nagar' : 'Central Chennai'
     const title = `${category.toUpperCase()} - ${locationName}`
@@ -303,11 +339,16 @@ export async function POST(req: NextRequest) {
       classification,
     }
 
+    const finalImageUrl = imagePath.startsWith('http') ? imagePath : `/api/images${imagePath}`
+
     const existingInStore = getIssueById(issueId)
     if (existingInStore) {
       existingInStore.reportCount = (existingInStore.reportCount || 1) + 1
       if (!existingInStore.reports) existingInStore.reports = []
       existingInStore.reports.unshift(newReportObj)
+      if (!existingInStore.imageUrl || existingInStore.imageUrl.includes('unsplash')) {
+        existingInStore.imageUrl = finalImageUrl
+      }
       upsertIssue(existingInStore)
     } else {
       const storeIssue: StoreIssue = {
@@ -324,7 +365,7 @@ export async function POST(req: NextRequest) {
         priorityBand: 'HIGH',
         priorityRationale: 'Intake evaluated by Llama-3.2-11B Vision',
         reportCount: 1,
-        imageUrl: `/api/images${imagePath}`,
+        imageUrl: finalImageUrl,
         createdAt: new Date().toISOString(),
         reports: [newReportObj],
         events: [

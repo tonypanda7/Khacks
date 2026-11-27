@@ -322,34 +322,50 @@ export default function MapPage() {
             onClick={e => e.stopPropagation()}
           >
             {/* Defect Photo Banner */}
-            <div className="relative aspect-video w-full bg-slate-950 overflow-hidden border-b border-slate-800">
-              <img
-                src={activeModalIssue.imageUrl || activeModalIssue.reports?.[0]?.image?.path || 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=600&auto=format&fit=crop&q=80'}
-                alt={activeModalIssue.title || 'Road defect photo'}
-                className="w-full h-full object-cover"
-              />
-              {/* Category & Status Overlay */}
-              <div className="absolute top-3 left-3 flex items-center space-x-2">
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-black/75 text-emerald-400 border border-emerald-500/40 uppercase tracking-wide">
-                  {activeModalIssue.category === 'pothole' ? '🕳️ Pothole' : activeModalIssue.category === 'drainage' ? '🌊 Drainage' : '🗑️ Garbage'}
-                </span>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
-                  activeModalIssue.status === 'FIX_VERIFIED' ? 'bg-emerald-950 text-emerald-300 border-emerald-600' :
-                  activeModalIssue.status === 'IN_PROGRESS' ? 'bg-blue-950 text-blue-300 border-blue-600' :
-                  activeModalIssue.status === 'FIX_REJECTED' ? 'bg-red-950 text-red-300 border-red-600' :
-                  'bg-amber-950 text-amber-300 border-amber-600'
-                }`}>
-                  {activeModalIssue.status}
-                </span>
-              </div>
-              {/* Close Button */}
-              <button
-                onClick={() => setActiveModalIssue(null)}
-                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/75 hover:bg-black text-white flex items-center justify-center font-bold text-sm cursor-pointer border border-white/20"
-              >
-                ✕
-              </button>
-            </div>
+            {(() => {
+              const rawImg = activeModalIssue.imageUrl || activeModalIssue.reports?.[0]?.image?.path
+              const modalImg = rawImg 
+                ? (rawImg.startsWith('http') || rawImg.startsWith('/api/images') ? rawImg : `/api/images${rawImg}`)
+                : null
+
+              return (
+                <div className="relative aspect-video w-full bg-slate-950 overflow-hidden border-b border-slate-800 flex items-center justify-center">
+                  {modalImg ? (
+                    <img
+                      src={modalImg}
+                      alt={activeModalIssue.title || 'Road defect photo'}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-slate-500 space-y-2">
+                      <span className="text-3xl">📸</span>
+                      <span className="text-xs font-mono tracking-wider uppercase text-slate-400">Verified Citizen Field Evidence</span>
+                    </div>
+                  )}
+                  {/* Category & Status Overlay */}
+                  <div className="absolute top-3 left-3 flex items-center space-x-2">
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-black/75 text-emerald-400 border border-emerald-500/40 uppercase tracking-wide">
+                      {activeModalIssue.category === 'pothole' ? '🕳️ Pothole' : activeModalIssue.category === 'drainage' ? '🌊 Drainage' : '🗑️ Garbage'}
+                    </span>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                      activeModalIssue.status === 'FIX_VERIFIED' ? 'bg-emerald-950 text-emerald-300 border-emerald-600' :
+                      activeModalIssue.status === 'IN_PROGRESS' ? 'bg-blue-950 text-blue-300 border-blue-600' :
+                      activeModalIssue.status === 'FIX_REJECTED' ? 'bg-red-950 text-red-300 border-red-600' :
+                      'bg-amber-950 text-amber-300 border-amber-600'
+                    }`}>
+                      {activeModalIssue.status}
+                    </span>
+                  </div>
+                  {/* Close Button */}
+                  <button
+                    onClick={() => setActiveModalIssue(null)}
+                    className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/75 hover:bg-black text-white flex items-center justify-center font-bold text-sm cursor-pointer border border-white/20"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )
+            })()}
 
             {/* Content Details */}
             <div className="p-6 space-y-4">

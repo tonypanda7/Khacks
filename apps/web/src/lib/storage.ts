@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
+import { supabaseAdmin } from './supabase'
 
-// Allow fallback to /tmp/uploads on serverless environments like Vercel
 const defaultBaseDir = (Boolean(process.env.VERCEL) || process.env.NODE_ENV === 'production') && !process.env.UPLOAD_DIR
   ? '/tmp/uploads'
   : path.resolve(process.cwd(), '../../uploads')
@@ -9,18 +9,38 @@ const defaultBaseDir = (Boolean(process.env.VERCEL) || process.env.NODE_ENV === 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || defaultBaseDir
 
 export async function saveImage(buffer: Buffer, sha256Hex: string, kind: 'report' | 'fix'): Promise<string> {
-  const primaryDir = path.join(UPLOAD_DIR, kind)
   const filename = `${sha256Hex}.jpg`
-  
+  const relativePath = `${kind}/${filename}`
+
+  // 1. Upload to Supabase Storage (Permanent CDN URL across all Vercel instances)
   try {
+    const { error } = await supabaseAdmin.storage
+      .from('uploads')
+      .upload(relativePath, buffer, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      })
+
+    if (!error) {
+      const { data: pub } = supabaseAdmin.storage
+        .from('uploads')
+        .getPublicUrl(relativePath)
+      if (pub?.publicUrl) {
+        return pub.publicUrl
+      }
+    }
+  } catch (err) {
+    console.warn('Supabase storage upload fallback:', err)
+  }
+
+  // 2. Local disk caching
+  try {
+    const primaryDir = path.join(UPLOAD_DIR, kind)
     if (!fs.existsSync(primaryDir)) {
       fs.mkdirSync(primaryDir, { recursive: true })
     }
-    const filePath = path.join(primaryDir, filename)
-    fs.writeFileSync(filePath, buffer)
-    return `/${kind}/${filename}`
+    fs.writeFileSync(path.join(primaryDir, filename), buffer)
   } catch {
-    // Fallback directly to /tmp on serverless environments
     const fallbackDir = path.join('/tmp/uploads', kind)
     try {
       if (!fs.existsSync(fallbackDir)) {
@@ -28,11 +48,15 @@ export async function saveImage(buffer: Buffer, sha256Hex: string, kind: 'report
       }
       fs.writeFileSync(path.join(fallbackDir, filename), buffer)
     } catch {}
-    return `/${kind}/${filename}`
   }
+
+  return `/${kind}/${filename}`
 }
 
-export function getImagePath(relativePath: string): string {
-  const cleanPath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath
+export function getImagePath(pathOrUrl: string): string {
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+    return pathOrUrl
+  }
+  const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl.slice(1) : pathOrUrl
   return path.join(UPLOAD_DIR, cleanPath)
 }

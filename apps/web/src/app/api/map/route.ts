@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       where.flags = { has: 'OVERDUE' }
     }
 
-    issues = await prisma.issue.findMany({
+    const prismaIssues = await prisma.issue.findMany({
       where,
       select: {
         id: true,
@@ -38,7 +38,23 @@ export async function GET(req: NextRequest) {
         isSeed: true,
         severityRationale: true,
         priorityRationale: true,
+        reports: {
+          select: {
+            image: {
+              select: { path: true }
+            }
+          },
+          take: 1,
+        }
       },
+    })
+
+    issues = prismaIssues.map((i: any) => {
+      const imgPath = i.reports?.[0]?.image?.path
+      return {
+        ...i,
+        imageUrl: imgPath ? (imgPath.startsWith('http') ? imgPath : `/api/images${imgPath}`) : undefined,
+      }
     })
   } catch (err: any) {
     // Prisma offline
@@ -54,6 +70,22 @@ export async function GET(req: NextRequest) {
 
       const { data, error } = await query
       if (data && data.length > 0) {
+        // Fetch reports & images to attach imageUrl directly
+        const { data: reports } = await supabaseAdmin.from('reports').select('issue_id, image_id')
+        const imageIds = (reports || []).map(r => r.image_id).filter(Boolean)
+        const { data: images } = await supabaseAdmin.from('images').select('id, path').in('id', imageIds)
+
+        const imgPathMap = new Map((images || []).map(img => [img.id, img.path]))
+        const issueImgMap = new Map()
+        for (const rep of reports || []) {
+          if (rep.issue_id && rep.image_id && !issueImgMap.has(rep.issue_id)) {
+            const p = imgPathMap.get(rep.image_id)
+            if (p) {
+              issueImgMap.set(rep.issue_id, p.startsWith('http') ? p : `/api/images${p}`)
+            }
+          }
+        }
+
         issues = data.map((d: any) => ({
           id: d.id,
           category: d.category,
@@ -68,6 +100,7 @@ export async function GET(req: NextRequest) {
           isSeed: d.is_seed,
           severityRationale: d.severity_rationale,
           priorityRationale: d.priority_rationale,
+          imageUrl: issueImgMap.get(d.id) || undefined,
         }))
       }
     } catch {
