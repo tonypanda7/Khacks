@@ -5,12 +5,6 @@ import { useRouter } from 'next/navigation'
 import exifr from 'exifr'
 import { formatCategory } from '@/lib/category'
 
-const LOCATION_PRESETS = [
-  { name: '🏫 K.C.S. Kasi Nadar College, Chennai', lat: 13.1205, lon: 80.2805 },
-  { name: '🛣️ Anna Salai / Thousand Lights', lat: 13.0528, lon: 80.2514 },
-  { name: '🏢 Rajiv Gandhi Salai (OMR)', lat: 12.9620, lon: 80.2428 },
-]
-
 // Convert and compress ANY image to lightning-fast WebP before uploading
 async function convertAndCompressToWebP(file: File): Promise<Blob> {
   return new Promise((resolve) => {
@@ -58,8 +52,8 @@ export default function UploadPage() {
   const [preview, setPreview] = useState<string | null>(null)
   const [detectedGps, setDetectedGps] = useState<{ lat: number; lon: number } | null>(null)
   const [manualGps, setManualGps] = useState<{ lat: number; lon: number } | null>(null)
-  const [locationName, setLocationName] = useState<string>('')
   const [hasNoExifGps, setHasNoExifGps] = useState(false)
+  const [locating, setLocating] = useState(false)
   const [loading, setLoading] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
@@ -88,17 +82,16 @@ export default function UploadPage() {
         if (Number.isFinite(lat) && Number.isFinite(lon)) {
           setDetectedGps({ lat, lon })
           setHasNoExifGps(false)
+          setManualGps(null)
         } else {
           setDetectedGps(null)
           setHasNoExifGps(true)
-          setManualGps({ lat: 13.1205, lon: 80.2805 })
-          setLocationName('🏫 K.C.S. Kasi Nadar College, Chennai')
+          setManualGps(null)
         }
       } catch {
         setDetectedGps(null)
         setHasNoExifGps(true)
-        setManualGps({ lat: 13.1205, lon: 80.2805 })
-        setLocationName('🏫 K.C.S. Kasi Nadar College, Chennai')
+        setManualGps(null)
       }
     }
   }
@@ -108,20 +101,34 @@ export default function UploadPage() {
       setError('Geolocation is not supported by your browser.')
       return
     }
+    setLocating(true)
+    setError(null)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setManualGps({ lat: pos.coords.latitude, lon: pos.coords.longitude })
-        setLocationName(`📍 Current Device Location (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`)
+        setLocating(false)
+        const lat = pos.coords.latitude
+        const lon = pos.coords.longitude
+        setManualGps({ lat, lon })
       },
       (err) => {
-        setError('Could not access device location: ' + err.message)
-      }
+        setLocating(false)
+        setError('Could not access device GPS: ' + err.message + '. Please ensure location permission is allowed.')
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file) return
+
+    const targetLat = detectedGps?.lat ?? manualGps?.lat
+    const targetLon = detectedGps?.lon ?? manualGps?.lon
+
+    if (targetLat === undefined || targetLon === undefined) {
+      setError('GPS Location required: Please tap "Use Device Location" above so this hazard can be pinned to the road grid.')
+      return
+    }
 
     setLoading(true)
     setError(null)
@@ -133,10 +140,6 @@ export default function UploadPage() {
       
       const formData = new FormData()
       formData.append('image', webpBlob, 'defect.webp')
-
-      // 2. Always pass coordinates (detected EXIF or chosen landmark)
-      const targetLat = detectedGps?.lat ?? manualGps?.lat ?? 13.1205
-      const targetLon = detectedGps?.lon ?? manualGps?.lon ?? 80.2805
       formData.append('fallbackLat', targetLat.toString())
       formData.append('fallbackLon', targetLon.toString())
 
@@ -230,7 +233,7 @@ export default function UploadPage() {
         <div className="mb-5 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-xs sm:text-sm flex items-start space-x-3">
           <span className="text-lg">⚠️</span>
           <div>
-            <strong className="block font-semibold">Submission Rejected</strong>
+            <strong className="block font-semibold">Location or Upload Notice</strong>
             <span>{error}</span>
           </div>
         </div>
@@ -365,49 +368,52 @@ export default function UploadPage() {
 
           {/* Location Verification Status */}
           {preview && (
-            <div className="p-3 sm:p-4 rounded-xl border bg-slate-800/50 border-slate-700 text-xs space-y-3">
+            <div className="p-3.5 sm:p-4 rounded-xl border bg-slate-800/50 border-slate-700 text-xs">
               {detectedGps ? (
                 <div className="flex flex-wrap items-center text-emerald-400 gap-2 font-medium">
                   <span>📍 GPS Detected from Photo EXIF:</span>
-                  <span className="font-mono bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30">
+                  <span className="font-mono bg-emerald-950 px-2.5 py-1 rounded-lg border border-emerald-500/30">
                     {detectedGps.lat.toFixed(5)}°N, {detectedGps.lon.toFixed(5)}°E
                   </span>
                 </div>
               ) : hasNoExifGps ? (
-                <div className="space-y-2">
-                  <div className="text-amber-400 font-semibold flex items-center space-x-1">
-                    <span>⚠️ No GPS metadata in photo</span>
-                    <span className="text-slate-400 font-normal">(messaging apps often scrub GPS)</span>
+                <div className="space-y-3">
+                  <div className="text-amber-400 font-semibold flex items-center space-x-1.5 text-xs sm:text-sm">
+                    <span>⚠️</span>
+                    <span>No GPS coordinates found in photo</span>
                   </div>
-                  <p className="text-slate-300">
-                    Pin location for map placement: <strong className="text-emerald-400">{locationName || 'Select Below'}</strong>
-                  </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {LOCATION_PRESETS.map((p) => (
+
+                  {manualGps ? (
+                    <div className="flex items-center justify-between bg-emerald-950/60 border border-emerald-500/40 p-3.5 rounded-xl text-emerald-300">
+                      <div className="flex items-center space-x-2.5">
+                        <span className="text-lg">📍</span>
+                        <div>
+                          <span className="block font-bold text-xs sm:text-sm">Device Location Acquired</span>
+                          <span className="font-mono text-xs text-emerald-400">
+                            {manualGps.lat.toFixed(5)}°N, {manualGps.lon.toFixed(5)}°E
+                          </span>
+                        </div>
+                      </div>
                       <button
-                        key={p.name}
                         type="button"
-                        onClick={() => {
-                          setManualGps({ lat: p.lat, lon: p.lon })
-                          setLocationName(p.name)
-                        }}
-                        className={`px-3 py-1.5 rounded-lg border text-xs transition cursor-pointer ${
-                          manualGps?.lat === p.lat
-                            ? 'bg-emerald-600/30 border-emerald-500 text-white font-semibold'
-                            : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600'
-                        }`}
+                        onClick={handleUseDeviceLocation}
+                        disabled={locating}
+                        className="text-[11px] underline text-emerald-400 hover:text-emerald-300 cursor-pointer"
                       >
-                        {p.name}
+                        {locating ? 'Updating...' : 'Update GPS'}
                       </button>
-                    ))}
+                    </div>
+                  ) : (
                     <button
                       type="button"
                       onClick={handleUseDeviceLocation}
-                      className="px-3 py-1.5 rounded-lg border bg-blue-600/20 border-blue-500 text-blue-300 hover:bg-blue-600/30 text-xs transition cursor-pointer"
+                      disabled={locating}
+                      className="w-full py-4 px-6 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm sm:text-base flex items-center justify-center space-x-2.5 shadow-xl transition active:scale-[0.98] cursor-pointer border border-blue-400/40"
                     >
-                      📍 Use Device GPS
+                      <span className="text-xl">📍</span>
+                      <span>{locating ? 'Acquiring Device GPS...' : 'Use Device Location'}</span>
                     </button>
-                  </div>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -415,10 +421,14 @@ export default function UploadPage() {
 
           <button
             type="submit"
-            disabled={!file || loading}
+            disabled={!file || loading || (!detectedGps && !manualGps)}
             className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-6 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer text-sm sm:text-base"
           >
-            {loading ? (statusMessage || 'Analyzing with Vision AI...') : 'Submit Report for AI Verification'}
+            {loading
+              ? (statusMessage || 'Analyzing with Vision AI...')
+              : (!detectedGps && !manualGps)
+              ? '📍 Tap "Use Device Location" to Continue'
+              : 'Submit Report for AI Verification'}
           </button>
         </form>
       )}
