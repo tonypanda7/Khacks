@@ -154,6 +154,7 @@ export default function MapPage() {
         markersRef.current = []
 
         issues.forEach(issue => {
+          if (!Number.isFinite(issue.lat) || !Number.isFinite(issue.lon)) return
           const color = 
             issue.status === 'FIX_VERIFIED' ? '#10b981' :
             issue.status === 'IN_PROGRESS' ? '#3b82f6' :

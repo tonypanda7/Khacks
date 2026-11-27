@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    key = os.getenv("DEEPINFRA_API_KEY") or os.getenv("OPENROUTER_API_KEY")
     logger.info("🚀 FixProof AI Service starting...")
-    logger.info(f"   Model: {os.getenv('AI_MODEL', 'not set')}")
-    logger.info(f"   Embed: {os.getenv('EMBED_MODEL', 'not set')}")
-    logger.info(f"   OpenRouter key: {'✓ set' if os.getenv('OPENROUTER_API_KEY') else '✗ missing'}")
+    logger.info(f"   Provider Base: {os.getenv('AI_BASE_URL', 'default')}")
+    logger.info(f"   Model: {os.getenv('AI_MODEL', 'Qwen/Qwen2.5-VL-7B-Instruct')}")
+    logger.info(f"   API Key: {'✓ configured' if key else '✗ missing'}")
     yield
     logger.info("AI Service shutting down...")
 
@@ -53,10 +54,11 @@ app.include_router(verify_fix_router)
 
 @app.get("/health")
 async def health():
-    has_key = bool(os.getenv("OPENROUTER_API_KEY"))
+    key = bool(os.getenv("DEEPINFRA_API_KEY") or os.getenv("OPENROUTER_API_KEY"))
+    provider = "deepinfra" if os.getenv("DEEPINFRA_API_KEY") else "openrouter"
     return {
-        "status": "ok" if has_key else "degraded",
-        "model": os.getenv("AI_MODEL", "not configured"),
-        "embed_model": os.getenv("EMBED_MODEL", "not configured"),
-        "api_key_set": has_key,
+        "status": "ok" if key else "degraded",
+        "provider": provider,
+        "model": os.getenv("AI_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"),
+        "api_key_set": key,
     }

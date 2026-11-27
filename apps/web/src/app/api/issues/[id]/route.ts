@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { FALLBACK_SEED_ISSUES } from '@/lib/mock-data'
+import { getIssueById } from '@/lib/store'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -24,6 +24,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // Database offline fallback
   }
 
-  const fallback = FALLBACK_SEED_ISSUES.find(i => i.id === id) || FALLBACK_SEED_ISSUES[0]
-  return NextResponse.json(fallback)
+  const issue = getIssueById(id)
+  if (issue) {
+    return NextResponse.json(issue)
+  }
+
+  return NextResponse.json({ error: `Issue ${id} not found` }, { status: 404 })
 }

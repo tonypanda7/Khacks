@@ -2,17 +2,28 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import exifr from 'exifr'
+
+const LOCATION_PRESETS = [
+  { name: '🏫 K.C.S. Kasi Nadar College, Chennai', lat: 13.1205, lon: 80.2805 },
+  { name: '🛣️ Anna Salai / Thousand Lights', lat: 13.0528, lon: 80.2514 },
+  { name: '🏢 Rajiv Gandhi Salai (OMR)', lat: 12.9620, lon: 80.2428 },
+]
 
 export default function UploadPage() {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [detectedGps, setDetectedGps] = useState<{ lat: number; lon: number } | null>(null)
+  const [manualGps, setManualGps] = useState<{ lat: number; lon: number } | null>(null)
+  const [locationName, setLocationName] = useState<string>('')
+  const [hasNoExifGps, setHasNoExifGps] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [duplicatePrompt, setDuplicatePrompt] = useState<any | null>(null)
   const [successResult, setSuccessResult] = useState<any | null>(null)
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
     if (selected) {
       if (!selected.type.startsWith('image/jpeg') && !selected.type.startsWith('image/jpg')) {
@@ -25,7 +36,45 @@ export default function UploadPage() {
       setError(null)
       const url = URL.createObjectURL(selected)
       setPreview(url)
+
+      // Client-side EXIF inspection
+      try {
+        const parsed = await exifr.parse(selected, { gps: true })
+        const lat = Number(parsed?.latitude)
+        const lon = Number(parsed?.longitude)
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          setDetectedGps({ lat, lon })
+          setHasNoExifGps(false)
+        } else {
+          setDetectedGps(null)
+          setHasNoExifGps(true)
+          // Default to KCS Kasi Nadar College for convenience
+          setManualGps({ lat: 13.1205, lon: 80.2805 })
+          setLocationName('🏫 K.C.S. Kasi Nadar College, Chennai')
+        }
+      } catch (e) {
+        setDetectedGps(null)
+        setHasNoExifGps(true)
+        setManualGps({ lat: 13.1205, lon: 80.2805 })
+        setLocationName('🏫 K.C.S. Kasi Nadar College, Chennai')
+      }
     }
+  }
+
+  const handleUseDeviceLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser.')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setManualGps({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+        setLocationName(`📍 Current Device Location (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`)
+      },
+      (err) => {
+        setError('Could not access device location: ' + err.message)
+      }
+    )
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,6 +87,12 @@ export default function UploadPage() {
     try {
       const formData = new FormData()
       formData.append('image', file)
+
+      // If no valid EXIF GPS, provide the manual/fallback coordinates
+      if (!detectedGps && manualGps) {
+        formData.append('fallbackLat', manualGps.lat.toString())
+        formData.append('fallbackLon', manualGps.lon.toString())
+      }
 
       const res = await fetch('/api/reports', {
         method: 'POST',
@@ -93,7 +148,7 @@ export default function UploadPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white tracking-tight">Report Road Hazard</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Upload an original geotagged camera photo. Our vision AI verifies EXIF coordinates, classifies defect severity, and links evidence bundles.
+          Upload an original camera photo. FixProof vision AI verifies EXIF coordinates, classifies defect severity, and pins it to the public road grid.
         </p>
       </div>
 
@@ -107,7 +162,7 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* Duplicate Confirmation Dialog (Same pothole?) */}
+      {/* Duplicate Confirmation Dialog */}
       {duplicatePrompt && (
         <div className="mb-6 p-5 bg-slate-900 border-2 border-amber-500/50 rounded-2xl shadow-xl">
           <div className="flex items-center space-x-2 text-amber-400 font-bold mb-3">
@@ -128,9 +183,6 @@ export default function UploadPage() {
                   src={`/api/images${duplicatePrompt.candidateIssue?.refImagePath}`}
                   alt="Existing reference"
                   className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" fill="%23334155"><text x="10" y="50" fill="%23fff">Reference Photo</text></svg>'
-                  }}
                 />
               </div>
               <span className="text-xs text-slate-400">{duplicatePrompt.candidateIssue?.reportCount} prior report(s)</span>
@@ -168,14 +220,23 @@ export default function UploadPage() {
       {successResult && (
         <div className="mb-6 p-5 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl text-emerald-300">
           <h3 className="font-bold text-lg mb-1 flex items-center space-x-2">
-            <span>✓ Report Successfully Registered</span>
+            <span>✓ Report Successfully Registered & Verified by AI</span>
           </h3>
-          <p className="text-sm mb-4">
+          <p className="text-sm mb-2 text-slate-300">
             {successResult.status === 'attached'
               ? 'Your photo was attached as supplemental evidence to an existing defect bundle.'
-              : 'A new civic defect issue has been created, classified, and scheduled for department routing.'}
+              : 'A new civic defect issue has been created and placed on the Chennai live map.'}
           </p>
-          <div className="flex space-x-3">
+
+          {successResult.classification && (
+            <div className="bg-slate-900/80 border border-emerald-500/30 rounded-xl p-3 my-3 text-xs text-slate-200 space-y-1">
+              <div><strong className="text-emerald-400">AI Category:</strong> {successResult.classification.category?.toUpperCase() || 'CIVIC DEFECT'}</div>
+              <div><strong className="text-emerald-400">Severity:</strong> {successResult.classification.severity_1_5 ?? 3} / 5</div>
+              <div><strong className="text-emerald-400">AI Rationale:</strong> {successResult.classification.severity_rationale}</div>
+            </div>
+          )}
+
+          <div className="flex space-x-3 mt-4">
             <button
               onClick={() => router.push(`/issues/${successResult.issueId}`)}
               className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer"
@@ -186,7 +247,7 @@ export default function UploadPage() {
               onClick={() => router.push('/map')}
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer"
             >
-              Return to Map
+              View Pin on Chennai Map 📍
             </button>
           </div>
         </div>
@@ -216,18 +277,68 @@ export default function UploadPage() {
                   Click to select JPEG or drag & drop camera photo
                 </div>
                 <p className="text-xs text-slate-500">
-                  Original bytes with GPS EXIF metadata required. Max 20MB.
+                  Camera JPEGs with GPS EXIF metadata. Max 20MB.
                 </p>
               </div>
             )}
           </div>
+
+          {/* Location Verification Status */}
+          {preview && (
+            <div className="p-4 rounded-xl border bg-slate-800/50 border-slate-700 text-xs space-y-3">
+              {detectedGps ? (
+                <div className="flex items-center text-emerald-400 space-x-2 font-medium">
+                  <span>📍 GPS Detected from Photo EXIF:</span>
+                  <span className="font-mono bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30">
+                    {detectedGps.lat.toFixed(5)}°N, {detectedGps.lon.toFixed(5)}°E
+                  </span>
+                </div>
+              ) : hasNoExifGps ? (
+                <div className="space-y-2">
+                  <div className="text-amber-400 font-semibold flex items-center space-x-1">
+                    <span>⚠️ No GPS metadata in photo</span>
+                    <span className="text-slate-400 font-normal">(email apps and chats often scrub GPS tags)</span>
+                  </div>
+                  <p className="text-slate-300">
+                    Pin location for map placement: <strong className="text-emerald-400">{locationName || 'Select Below'}</strong>
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {LOCATION_PRESETS.map((p) => (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => {
+                          setManualGps({ lat: p.lat, lon: p.lon })
+                          setLocationName(p.name)
+                        }}
+                        className={`px-3 py-1.5 rounded-lg border text-xs transition cursor-pointer ${
+                          manualGps?.lat === p.lat
+                            ? 'bg-emerald-600/30 border-emerald-500 text-white font-semibold'
+                            : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600'
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={handleUseDeviceLocation}
+                      className="px-3 py-1.5 rounded-lg border bg-blue-600/20 border-blue-500 text-blue-300 hover:bg-blue-600/30 text-xs transition cursor-pointer"
+                    >
+                      📍 Use Device GPS
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={!file || loading}
             className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-6 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer"
           >
-            {loading ? 'Analyzing EXIF & Running Vision AI...' : 'Submit Report for AI Verification'}
+            {loading ? 'Analyzing with Vision AI (DeepInfra)...' : 'Submit Report for AI Verification'}
           </button>
         </form>
       )}

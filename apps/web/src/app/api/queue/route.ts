@@ -3,7 +3,7 @@ import { getIronSession } from 'iron-session'
 import { cookies } from 'next/headers'
 import { sessionOptions, SessionData } from '@/lib/session'
 import { prisma } from '@/lib/prisma'
-import { FALLBACK_SEED_ISSUES } from '@/lib/mock-data'
+import { getAllIssues } from '@/lib/store'
 
 export async function GET(req: NextRequest) {
   try {
@@ -34,8 +34,10 @@ export async function GET(req: NextRequest) {
     // Database offline fallback
   }
 
-  const queueIssues = FALLBACK_SEED_ISSUES.filter(i =>
-    ['REPORTED', 'ROUTED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'FIX_REJECTED', 'NEEDS_REVIEW'].includes(i.status)
-  )
+  const allIssues = getAllIssues()
+  const queueIssues = allIssues
+    .filter(i => ['REPORTED', 'ROUTED', 'ACKNOWLEDGED', 'IN_PROGRESS', 'FIX_REJECTED', 'NEEDS_REVIEW'].includes(i.status))
+    .sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0))
+
   return NextResponse.json(queueIssues)
 }

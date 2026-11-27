@@ -17,8 +17,8 @@ export async function parseExif(buffer: Buffer): Promise<ParsedExif | null> {
 
     if (!exif) return null
 
-    const lat = exif.latitude
-    const lon = exif.longitude
+    const lat = typeof exif.latitude === 'number' && Number.isFinite(exif.latitude) ? exif.latitude : undefined
+    const lon = typeof exif.longitude === 'number' && Number.isFinite(exif.longitude) ? exif.longitude : undefined
 
     if (lat === undefined || lon === undefined) return null
 
