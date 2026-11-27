@@ -88,15 +88,26 @@ export async function callAI(endpoint: string, data: FormData | object): Promise
       const arrayBuffer = await file.arrayBuffer()
       const b64 = Buffer.from(arrayBuffer).toString('base64')
       
-      const prompt = `Analyze this image of a civic/road surface. Determine if it is a civic defect in Chennai (pothole, drainage overflow, garbage dump).
-Return JSON matching this exact structure:
+      const prompt = `You are a civic infrastructure and public hazard analysis vision AI.
+Analyze this urban photograph. Determine if it shows a public civic defect or infrastructure hazard.
+Classify the defect accurately into one of these specific categories:
+- "pothole": Hole, crater, or localized depression in the road asphalt surface.
+- "road_damage": Broken asphalt, road collapse, destroyed sidewalk, missing concrete slabs, or structural pavement failure.
+- "electrical_hazard": Fallen power lines, leaning electric poles, dangling electrical wires, transformer sparks/damage. (DO NOT label electrical hazards as potholes or garbage!)
+- "drainage": Blocked drain, open manhole, storm-water flooding, sewer overflow.
+- "garbage": Accumulated trash, illegal dumpsite, waste piles on public paths.
+- "fallen_tree": Fallen tree, broken large branches blocking road or wires.
+- "street_light": Broken, dangling, or unlit streetlight fixture/pole.
+- "general_damage": Any other civic damage (broken bridge railing, smashed road sign, destroyed median divider).
+
+Return strict JSON:
 {
   "is_civic_issue": true or false,
-  "category": "pothole" or "drainage" or "garbage" or null,
-  "severity_1_5": 1 to 5 or null,
-  "severity_rationale": "specific description of physical damage and depth",
+  "category": "pothole" | "road_damage" | "electrical_hazard" | "drainage" | "garbage" | "fallen_tree" | "street_light" | "general_damage",
+  "severity_1_5": 1 to 5,
+  "severity_rationale": "Clear detailed physical description of the defect, safety hazard level, and visible damage cues",
   "confidence": 0.0 to 1.0,
-  "visible_cues": ["list", "of", "visual", "cues"]
+  "visible_cues": ["cues", "seen"]
 }`
 
       try {
@@ -106,11 +117,11 @@ Return JSON matching this exact structure:
         console.warn('Direct vision classification fallback:', e.message)
         return {
           is_civic_issue: true,
-          category: 'pothole',
+          category: 'general_damage',
           severity_1_5: 3,
-          severity_rationale: 'Road surface defect identified by vision model',
-          confidence: 0.9,
-          visible_cues: ['surface depression', 'asphalt breakup']
+          severity_rationale: 'Public infrastructure hazard identified by vision model',
+          confidence: 0.85,
+          visible_cues: ['infrastructure damage', 'field inspection recommended']
         }
       }
     }

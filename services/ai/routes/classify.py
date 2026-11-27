@@ -17,7 +17,7 @@ def load_prompt() -> str:
         with open(prompt_path) as f:
             return f.read()
     # Fallback inline prompt
-    return """Analyze this image. Return JSON: {"is_civic_issue": bool, "category": "pothole"|"drainage"|"garbage"|null, "severity_1_5": int|null, "severity_rationale": str, "confidence": float, "visible_cues": [str]}"""
+    return """Analyze this image of public infrastructure. Return JSON: {"is_civic_issue": bool, "category": "pothole"|"road_damage"|"electrical_hazard"|"drainage"|"garbage"|"fallen_tree"|"street_light"|"general_damage"|null, "severity_1_5": int|null, "severity_rationale": str, "confidence": float, "visible_cues": [str]}"""
 
 
 @router.post("/classify", response_model=ClassifyResponse)

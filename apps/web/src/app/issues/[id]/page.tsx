@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { formatCategory } from '@/lib/category'
 
 export default function IssueDetailPage() {
   const params = useParams()
@@ -49,9 +50,15 @@ export default function IssueDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="uppercase text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              {issue.category}
-            </span>
+            {(() => {
+              const cat = formatCategory(issue.category)
+              return (
+                <span className={`uppercase text-xs font-bold px-2 py-0.5 rounded ${cat.bgClass} ${cat.textClass} border ${cat.borderClass} flex items-center space-x-1`}>
+                  <span>{cat.icon}</span>
+                  <span>{cat.label}</span>
+                </span>
+              )
+            })()}
             <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
               issue.status === 'FIX_VERIFIED' ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' :
               issue.status === 'IN_PROGRESS' ? 'bg-blue-950 text-blue-300 border border-blue-700' :

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { formatCategory, KNOWN_CATEGORIES } from '@/lib/category'
 
 interface IssuePin {
   id: string
@@ -163,9 +164,8 @@ export default function MapPage() {
             issue.status === 'NEEDS_REVIEW' ? '#f59e0b' :
             '#f97316' // REPORTED / ROUTED
 
-          const icon = 
-            issue.category === 'pothole' ? '🕳️' :
-            issue.category === 'drainage' ? '🌊' : '🗑️'
+          const catMeta = formatCategory(issue.category)
+          const icon = catMeta.icon
 
           // Outer container for MapLibre positioning (DO NOT animate this element)
           const el = document.createElement('div')
@@ -248,24 +248,23 @@ export default function MapPage() {
   }, [mapLoaded, issues])
 
   return (
-    <div className="flex-1 w-full h-[calc(100vh-61px)] flex overflow-hidden relative">
+    <div className="flex-1 w-full h-[calc(100vh-57px)] md:h-[calc(100vh-61px)] flex overflow-hidden relative">
       {/* Top Filter Bar */}
-      <div className="absolute top-4 left-4 z-20 bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-slate-800 shadow-2xl flex flex-wrap items-center gap-3 text-xs">
+      <div className="absolute top-3 left-3 right-3 sm:right-auto z-20 bg-slate-900/95 backdrop-blur-md p-2.5 sm:p-3 rounded-xl border border-slate-800 shadow-2xl flex flex-wrap items-center gap-2 sm:gap-3 text-xs max-w-full">
         <select
           value={categoryFilter}
           onChange={e => setCategoryFilter(e.target.value)}
-          className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+          className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 text-xs"
         >
-          <option value="">All Categories</option>
-          <option value="pothole">Pothole (🕳️)</option>
-          <option value="drainage">Drainage (🌊)</option>
-          <option value="garbage">Garbage (🗑️)</option>
+          {KNOWN_CATEGORIES.map(c => (
+            <option key={c.key} value={c.key}>{c.icon} {c.label}</option>
+          ))}
         </select>
 
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
-          className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+          className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 text-xs"
         >
           <option value="">All Statuses</option>
           <option value="REPORTED">Reported</option>
@@ -280,7 +279,7 @@ export default function MapPage() {
         <select
           value={priorityFilter}
           onChange={e => setPriorityFilter(e.target.value)}
-          className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+          className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 text-xs hidden sm:block"
         >
           <option value="">All Priorities</option>
           <option value="CRITICAL">Critical</option>
@@ -289,18 +288,18 @@ export default function MapPage() {
           <option value="LOW">Low</option>
         </select>
 
-        <label className="flex items-center space-x-1.5 text-slate-300 cursor-pointer">
+        <label className="hidden sm:flex items-center space-x-1.5 text-slate-300 cursor-pointer text-xs">
           <input
             type="checkbox"
             checked={overdueOnly}
             onChange={e => setOverdueOnly(e.target.checked)}
             className="rounded border-slate-700 text-emerald-500 focus:ring-0"
           />
-          <span>Overdue Only</span>
+          <span>Overdue</span>
         </label>
 
-        <div className="border-l border-slate-700 pl-3 text-slate-400">
-          Showing <strong className="text-white">{issues.length}</strong> Road Pins
+        <div className="border-l border-slate-700 pl-2 sm:pl-3 text-slate-400 text-xs">
+          <strong className="text-emerald-400">{issues.length}</strong> Pins
         </div>
       </div>
 
@@ -308,17 +307,26 @@ export default function MapPage() {
       <div 
         ref={mapContainer} 
         className="w-full h-full flex-1 bg-slate-900"
-        style={{ minHeight: '500px', width: '100%', height: '100%' }}
+        style={{ minHeight: '400px', width: '100%', height: '100%' }}
       />
+
+      {/* Floating Report Button */}
+      <Link
+        href="/upload"
+        className="absolute bottom-5 right-5 z-20 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-5 rounded-full shadow-2xl flex items-center space-x-2 transition hover:scale-105 active:scale-95 text-xs sm:text-sm border border-emerald-400/40"
+      >
+        <span>📸</span>
+        <span>Report Hazard</span>
+      </Link>
 
       {/* INTERACTIVE POPUP / DIALOG BOX ON PIN CLICK */}
       {activeModalIssue && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
           onClick={() => setActiveModalIssue(null)}
         >
           <div 
-            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150"
+            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-150"
             onClick={e => e.stopPropagation()}
           >
             {/* Defect Photo Banner */}
@@ -327,6 +335,7 @@ export default function MapPage() {
               const modalImg = rawImg 
                 ? (rawImg.startsWith('http') || rawImg.startsWith('/api/images') ? rawImg : `/api/images${rawImg}`)
                 : null
+              const catMeta = formatCategory(activeModalIssue.category)
 
               return (
                 <div className="relative aspect-video w-full bg-slate-950 overflow-hidden border-b border-slate-800 flex items-center justify-center">
@@ -338,14 +347,15 @@ export default function MapPage() {
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-slate-500 space-y-2">
-                      <span className="text-3xl">📸</span>
+                      <span className="text-3xl">{catMeta.icon}</span>
                       <span className="text-xs font-mono tracking-wider uppercase text-slate-400">Verified Citizen Field Evidence</span>
                     </div>
                   )}
                   {/* Category & Status Overlay */}
-                  <div className="absolute top-3 left-3 flex items-center space-x-2">
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-black/75 text-emerald-400 border border-emerald-500/40 uppercase tracking-wide">
-                      {activeModalIssue.category === 'pothole' ? '🕳️ Pothole' : activeModalIssue.category === 'drainage' ? '🌊 Drainage' : '🗑️ Garbage'}
+                  <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-black/80 ${catMeta.textClass} border ${catMeta.borderClass} uppercase tracking-wide flex items-center space-x-1`}>
+                      <span>{catMeta.icon}</span>
+                      <span>{catMeta.label}</span>
                     </span>
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
                       activeModalIssue.status === 'FIX_VERIFIED' ? 'bg-emerald-950 text-emerald-300 border-emerald-600' :

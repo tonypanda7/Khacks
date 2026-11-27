@@ -14,7 +14,7 @@ class IssueCategory(str, Enum):
 
 class ClassifyResponse(BaseModel):
     is_civic_issue: bool
-    category: Optional[IssueCategory] = None
+    category: Optional[str] = None
     severity_1_5: Optional[int] = Field(None, ge=1, le=5)
     severity_rationale: Optional[str] = None
     confidence: float = Field(ge=0, le=1)

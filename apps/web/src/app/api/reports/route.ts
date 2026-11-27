@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate file type and size
-    if (!file.type.startsWith('image/jpeg') && !file.type.startsWith('image/jpg')) {
-      return NextResponse.json({ error: 'Only JPEG images are accepted' }, { status: 400 })
+    if (!file.type.startsWith('image/')) {
+      return NextResponse.json({ error: 'Please upload an image file (JPEG, WebP, PNG, HEIC)' }, { status: 400 })
     }
     if (file.size > 20 * 1024 * 1024) {
       return NextResponse.json({ error: 'Image too large (max 20MB)' }, { status: 400 })
@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
 
     // Also sync issue and report to Supabase over HTTPS port 443
     try {
-      await supabaseAdmin.from('issues').upsert({
+      const supaIssueData = {
         id: issueId,
         category,
         lat: lat!,
@@ -307,7 +307,19 @@ export async function POST(req: NextRequest) {
         report_count: matchedIssueId ? 2 : 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      })
+      }
+
+      const { error: supaErr } = await supabaseAdmin.from('issues').upsert(supaIssueData)
+      if (supaErr && (supaErr.code === '22P02' || supaErr.message?.includes('enum'))) {
+        // If Postgres column is still legacy IssueCategory enum, fallback gracefully
+        const baseCat = ['pothole', 'drainage', 'garbage'].includes(category) ? category : 'pothole'
+        await supabaseAdmin.from('issues').upsert({
+          ...supaIssueData,
+          category: baseCat,
+          flags: [category.toUpperCase()],
+          severity_rationale: `[Defect Type: ${category}] ${severityRationale}`
+        })
+      }
 
       await supabaseAdmin.from('reports').upsert({
         id: reportId,
@@ -327,7 +339,7 @@ export async function POST(req: NextRequest) {
 
     // Always persist to local store for instant availability on /map and /issues/[id]
     const locationName = (lat! > 13.10) ? 'North Chennai / R.K. Nagar' : 'Central Chennai'
-    const title = `${category.toUpperCase()} - ${locationName}`
+    const title = `${category.toUpperCase().replace(/_/g, ' ')} - ${locationName}`
     const road = `Location (${lat!.toFixed(4)}°N, ${lon!.toFixed(4)}°E)`
 
     const newReportObj = {

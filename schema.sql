@@ -35,7 +35,7 @@ CREATE TABLE "users" (
 -- CreateTable
 CREATE TABLE "issues" (
     "id" TEXT NOT NULL,
-    "category" "IssueCategory" NOT NULL,
+    "category" TEXT NOT NULL,
     "lat" DOUBLE PRECISION NOT NULL,
     "lon" DOUBLE PRECISION NOT NULL,
     "status" "IssueStatus" NOT NULL DEFAULT 'REPORTED',
@@ -163,4 +163,8 @@ ALTER TABLE "fix_attempts" ADD CONSTRAINT "fix_attempts_issue_id_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "events" ADD CONSTRAINT "events_issue_id_fkey" FOREIGN KEY ("issue_id") REFERENCES "issues"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- If migrating existing tables, convert category column to TEXT to support all civic hazards:
+ALTER TABLE "issues" ALTER COLUMN "category" TYPE TEXT;
+
 

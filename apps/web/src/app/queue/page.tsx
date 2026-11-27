@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { formatCategory } from '@/lib/category'
 
 export default function AuthorityQueuePage() {
   const [queue, setQueue] = useState<any[]>([])
@@ -91,9 +92,15 @@ export default function AuthorityQueuePage() {
 
                 <div>
                   <div className="flex items-center space-x-2">
-                    <span className="uppercase text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      {issue.category}
-                    </span>
+                    {(() => {
+                      const cat = formatCategory(issue.category)
+                      return (
+                        <span className={`uppercase text-xs font-bold px-2 py-0.5 rounded ${cat.bgClass} ${cat.textClass} border ${cat.borderClass} flex items-center space-x-1`}>
+                          <span>{cat.icon}</span>
+                          <span>{cat.label}</span>
+                        </span>
+                      )
+                    })()}
                     <span className="text-xs text-slate-300 font-semibold px-2 py-0.5 rounded bg-slate-800">
                       {issue.status}
                     </span>

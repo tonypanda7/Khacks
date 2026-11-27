@@ -64,7 +64,7 @@ model User {
 
 model Issue {
   id               String       @id @default(cuid())
-  category         IssueCategory
+  category         String
   lat              Float
   lon              Float
   status           IssueStatus  @default(REPORTED)

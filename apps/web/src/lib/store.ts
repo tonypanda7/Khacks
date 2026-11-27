@@ -46,7 +46,7 @@ function ensureStoreDir() {
 }
 
 export function getAllIssues(): StoreIssue[] {
-  if (memoryStore && memoryStore.length > 0) {
+  if (memoryStore !== null) {
     return memoryStore
   }
 
@@ -55,7 +55,7 @@ export function getAllIssues(): StoreIssue[] {
     if (fs.existsSync(STORE_PATH)) {
       const data = fs.readFileSync(STORE_PATH, 'utf-8')
       const parsed = JSON.parse(data)
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         memoryStore = parsed
         return parsed
       }
@@ -64,7 +64,7 @@ export function getAllIssues(): StoreIssue[] {
     console.warn('Store file read fallback:', err)
   }
 
-  // Initialize with seed issues
+  // Initialize with seed issues (empty)
   const initial = [...FALLBACK_SEED_ISSUES] as StoreIssue[]
   memoryStore = initial
   try {
