@@ -81,19 +81,30 @@ export default function MapPage() {
     fetchIssues()
   }, [categoryFilter, statusFilter, priorityFilter, overdueOnly])
 
-  // Open modal for issue
-  const openIssueModal = async (issue: IssuePin) => {
-    try {
-      const res = await fetch(`/api/issues/${issue.id}`)
-      if (res.ok) {
-        const fullData = await res.json()
-        setActiveModalIssue({ ...issue, ...fullData })
-        return
+  // Pre-warm pin images into browser cache for instant display when clicked
+  useEffect(() => {
+    issues.forEach(issue => {
+      if (issue.imageUrl) {
+        const img = new Image()
+        img.src = issue.imageUrl
       }
-    } catch (e) {
-      // fallback to issue in state
-    }
+    })
+  }, [issues])
+
+  // Open modal for issue - INSTANT 0ms response!
+  const openIssueModal = (issue: IssuePin) => {
+    // 1. Instantly display modal with data already in memory
     setActiveModalIssue(issue)
+
+    // 2. Silently fetch additional audit trail data in the background
+    fetch(`/api/issues/${issue.id}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(fullData => {
+        if (fullData) {
+          setActiveModalIssue(prev => (prev?.id === issue.id ? { ...prev, ...fullData } : prev))
+        }
+      })
+      .catch(() => {})
   }
 
   // Initialize MapLibre
@@ -344,6 +355,8 @@ export default function MapPage() {
                       src={modalImg}
                       alt={activeModalIssue.title || 'Road defect photo'}
                       className="w-full h-full object-cover"
+                      loading="eager"
+                      decoding="async"
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-slate-500 space-y-2">

@@ -1,63 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { getIssueById } from '@/lib/store'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  // 1. Try Prisma (TCP connection)
+  // 1. Fast in-memory check (0.1ms)
   try {
-    const issue = await prisma.issue.findUnique({
-      where: { id },
-      include: {
-        reports: {
-          include: { image: true, user: true },
-          orderBy: { createdAt: 'desc' },
-        },
-        events: { orderBy: { createdAt: 'asc' } },
-        fixAttempts: { orderBy: { createdAt: 'desc' } },
-      },
-    })
-    if (issue) {
-      const firstImgPath = issue.reports?.[0]?.image?.path
-      const imageUrl = firstImgPath
-        ? (firstImgPath.startsWith('http') ? firstImgPath : `/api/images${firstImgPath}`)
-        : undefined
-
-      return NextResponse.json({
-        ...issue,
-        imageUrl,
+    const localIssue = getIssueById(id)
+    if (localIssue && localIssue.reports && localIssue.reports.length > 0) {
+      return NextResponse.json(localIssue, {
+        headers: { 'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=30' }
       })
     }
-  } catch (err: any) {
-    // Database offline fallback
-  }
+  } catch {}
 
-  // 2. Try Supabase REST over HTTPS port 443 (firewall-proof)
+  // 2. High-speed Supabase REST over HTTPS port 443 (~150ms)
   try {
-    const { data: supaIssue } = await supabaseAdmin
-      .from('issues')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const [issueRes, reportsRes] = await Promise.all([
+      supabaseAdmin.from('issues').select('*').eq('id', id).single(),
+      supabaseAdmin.from('reports').select('*').eq('issue_id', id).order('created_at', { ascending: false })
+    ])
 
+    const supaIssue = issueRes.data
     if (supaIssue) {
-      const { data: supaReports } = await supabaseAdmin
-        .from('reports')
-        .select('*')
-        .eq('issue_id', id)
-        .order('created_at', { ascending: false })
+      const supaReports = reportsRes.data || []
+      const imageIds = supaReports.map((r: any) => r.image_id).filter(Boolean)
 
-      const imageIds = (supaReports || []).map((r: any) => r.image_id).filter(Boolean)
-      const { data: supaImages } = await supabaseAdmin
-        .from('images')
-        .select('*')
-        .in('id', imageIds)
+      let supaImages: any[] = []
+      if (imageIds.length > 0) {
+        const { data: imgData } = await supabaseAdmin.from('images').select('*').in('id', imageIds)
+        supaImages = imgData || []
+      }
 
-      const imgMap = new Map((supaImages || []).map((img: any) => [img.id, img]))
+      const imgMap = new Map(supaImages.map((img: any) => [img.id, img]))
 
-      const reportsWithImages = (supaReports || []).map((r: any) => ({
+      const reportsWithImages = supaReports.map((r: any) => ({
         ...r,
         createdAt: r.created_at,
         image: imgMap.get(r.image_id) || null,
@@ -79,16 +57,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         reports: reportsWithImages,
         events: [],
         fixAttempts: [],
+      }, {
+        headers: { 'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=30' }
       })
     }
   } catch (supaErr) {
-    // Supabase REST error
+    console.warn('Supabase REST issue fetch warning:', supaErr)
   }
 
-  // 3. Fallback to local memory / file store
-  const issue = getIssueById(id)
-  if (issue) {
-    return NextResponse.json(issue)
+  // 3. Fallback to basic local issue if exists
+  const localIssue = getIssueById(id)
+  if (localIssue) {
+    return NextResponse.json(localIssue)
   }
 
   return NextResponse.json({ error: `Issue ${id} not found` }, { status: 404 })
