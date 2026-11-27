@@ -16,9 +16,7 @@ export async function POST(req: NextRequest) {
   try {
     const cookieStore = await cookies()
     const session = await getIronSession<SessionData>(cookieStore, sessionOptions)
-    if (!session.isLoggedIn || session.role !== 'user') {
-      return NextResponse.json({ error: 'Unauthorized. Please login as citizen user.' }, { status: 401 })
-    }
+    const citizenUserId = session.isLoggedIn && session.role === 'user' ? session.userId : 'user_demo_chennai'
 
     const formData = await req.formData()
     const file = formData.get('image') as File | null

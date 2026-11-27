@@ -10,6 +10,47 @@ const LOCATION_PRESETS = [
   { name: '🏢 Rajiv Gandhi Salai (OMR)', lat: 12.9620, lon: 80.2428 },
 ]
 
+async function compressImageIfNeeded(file: File): Promise<Blob> {
+  // If file is under 3MB, keep as is
+  if (file.size <= 3 * 1024 * 1024) {
+    return file
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const maxDim = 2048
+      let width = img.width
+      let height = img.height
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width)
+          width = maxDim
+        } else {
+          width = Math.round((width * maxDim) / height)
+          height = maxDim
+        }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob((blob) => {
+          resolve(blob || file)
+        }, 'image/jpeg', 0.85)
+      } else {
+        resolve(file)
+      }
+    }
+    img.onerror = () => resolve(file)
+    img.src = url
+  })
+}
+
 export default function UploadPage() {
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
@@ -19,6 +60,7 @@ export default function UploadPage() {
   const [locationName, setLocationName] = useState<string>('')
   const [hasNoExifGps, setHasNoExifGps] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [duplicatePrompt, setDuplicatePrompt] = useState<any | null>(null)
   const [successResult, setSuccessResult] = useState<any | null>(null)
@@ -48,7 +90,6 @@ export default function UploadPage() {
         } else {
           setDetectedGps(null)
           setHasNoExifGps(true)
-          // Default to KCS Kasi Nadar College for convenience
           setManualGps({ lat: 13.1205, lon: 80.2805 })
           setLocationName('🏫 K.C.S. Kasi Nadar College, Chennai')
         }
@@ -83,26 +124,44 @@ export default function UploadPage() {
 
     setLoading(true)
     setError(null)
+    setStatusMessage('Optimizing image & preparing payload...')
 
     try {
+      // Downscale if file exceeds 3MB to avoid cloud gateway limits
+      const uploadBlob = await compressImageIfNeeded(file)
+      
       const formData = new FormData()
-      formData.append('image', file)
+      formData.append('image', uploadBlob, 'defect.jpg')
 
-      // If no valid EXIF GPS, provide the manual/fallback coordinates
-      if (!detectedGps && manualGps) {
-        formData.append('fallbackLat', manualGps.lat.toString())
-        formData.append('fallbackLon', manualGps.lon.toString())
-      }
+      // Always pass coordinates (detected EXIF or chosen landmark)
+      const targetLat = detectedGps?.lat ?? manualGps?.lat ?? 13.1205
+      const targetLon = detectedGps?.lon ?? manualGps?.lon ?? 80.2805
+      formData.append('fallbackLat', targetLat.toString())
+      formData.append('fallbackLon', targetLon.toString())
+
+      setStatusMessage('Sending to FixProof Vision AI (DeepInfra)...')
 
       const res = await fetch('/api/reports', {
         method: 'POST',
         body: formData,
       })
 
-      const data = await res.json()
+      const rawText = await res.text()
+      let data: any
+      try {
+        data = JSON.parse(rawText)
+      } catch {
+        if (res.status === 413) {
+          throw new Error('Image file is too large for the server. Please select a smaller photo.')
+        }
+        if (res.status === 401) {
+          throw new Error('Please sign in or refresh the page to submit.')
+        }
+        throw new Error(`Server returned error (${res.status}). Please try again.`)
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to submit report')
+        throw new Error(data.error || `Upload failed (${res.status})`)
       }
 
       if (data.status === 'confirm_duplicate') {
@@ -114,6 +173,7 @@ export default function UploadPage() {
       setError(err.message)
     } finally {
       setLoading(false)
+      setStatusMessage('')
     }
   }
 
@@ -128,7 +188,14 @@ export default function UploadPage() {
         body: JSON.stringify({ action }),
       })
 
-      const data = await res.json()
+      const rawText = await res.text()
+      let data: any
+      try {
+        data = JSON.parse(rawText)
+      } catch {
+        throw new Error(`Confirmation server error (${res.status})`)
+      }
+
       if (!res.ok) throw new Error(data.error || 'Confirmation failed')
 
       setSuccessResult({
@@ -338,7 +405,7 @@ export default function UploadPage() {
             disabled={!file || loading}
             className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-6 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg cursor-pointer"
           >
-            {loading ? 'Analyzing with Vision AI (DeepInfra)...' : 'Submit Report for AI Verification'}
+            {loading ? (statusMessage || 'Analyzing with Vision AI...') : 'Submit Report for AI Verification'}
           </button>
         </form>
       )}
