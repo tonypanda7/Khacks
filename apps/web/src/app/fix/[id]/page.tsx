@@ -1,12 +1,12 @@
 'use client'
 
-import { use, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-export default function SubmitFixPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params)
-  const id = resolvedParams.id
+export default function SubmitFixPage() {
+  const params = useParams()
+  const id = params?.id as string
   const router = useRouter()
 
   const [files, setFiles] = useState<File[]>([])

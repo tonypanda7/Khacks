@@ -1,11 +1,12 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 
-export default function IssueDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params)
-  const id = resolvedParams.id
+export default function IssueDetailPage() {
+  const params = useParams()
+  const id = params?.id as string
   const [issue, setIssue] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
