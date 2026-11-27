@@ -10,6 +10,7 @@ import { callAI, checkAIService } from '@/lib/ai-client'
 import { getThresholds, getSlaConfig } from '@/lib/config'
 import { haversineDistance } from '@/lib/haversine'
 import { getAllIssues, upsertIssue, getIssueById, StoreIssue } from '@/lib/store'
+import { supabaseAdmin } from '@/lib/supabase'
 import fs from 'fs'
 
 export async function POST(req: NextRequest) {
@@ -245,6 +246,27 @@ export async function POST(req: NextRequest) {
       }
     } catch (dbErr) {
       // Database offline — persist via store.ts
+    }
+
+    // Also sync to Supabase over HTTPS port 443
+    try {
+      await supabaseAdmin.from('issues').upsert({
+        id: issueId,
+        category,
+        lat: lat!,
+        lon: lon!,
+        status: initialStatus,
+        severity,
+        severity_rationale: severityRationale,
+        priority_score: 70,
+        priority_band: 'HIGH',
+        priority_rationale: 'Intake evaluated by Vision AI',
+        report_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    } catch {
+      // Supabase REST error
     }
 
     // Create report record
